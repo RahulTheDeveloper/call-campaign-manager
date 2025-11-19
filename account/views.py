@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from django.contrib.auth import authenticate
 
 from .models import Agent,Campaign,CampaignResult,User
 from .serializers import AgentSerializer,CampaignSerializer,CampaignResultSerializer,UserRegistrationSerializer
@@ -33,6 +34,44 @@ class RegisterAPIView(APIView):
                 status=status.HTTP_201_CREATED
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class LoginUserView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email")
+        password = request.data.get("password")
+
+        if not email or not password:
+            return Response(
+                {"error": "Email and password are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = authenticate(request, email=email, password=password)
+
+        if not user:
+            return Response(
+                {"error": "Invalid email or password"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Generate JWT Tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        return Response({
+            "message": "Login successful",
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "username": user.username,
+                "role": user.role
+            },
+            "access": access_token,
+            "refresh": str(refresh)
+        }, status=status.HTTP_200_OK)
+  
     
 class LogoutAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -149,6 +188,7 @@ class CampaignRetrieveUpdateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class CampaignDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrManager]
     def delete(self, request, pk):
         campaign = get_object_or_404(Campaign, pk=pk)
         campaign.delete()
@@ -156,7 +196,7 @@ class CampaignDeleteAPIView(APIView):
     
 # Campaign Result    
 class CampaignResultListCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrManager]
 
     def get(self, request):
         results = CampaignResult.objects.all().order_by('-id')
